@@ -15,6 +15,7 @@ import uuid
 import shutil
 import csv
 import re
+import gzip
 
 import streamlit as st
 import requests
@@ -153,6 +154,67 @@ def call_n8n_pipeline(rsid: str) -> str:
         return f"❌ N8N returned an error: {e}"
     except Exception as e:
         return f"❌ Unexpected error calling N8N: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  FILTERING LOGIC
+# ═══════════════════════════════════════════════════════════════════════════
+
+DATA_DIR = "data"
+
+@st.cache_data(show_spinner=False)
+def load_rsid_set(filename):
+    """Load a set of rsIDs from a plain text or gzipped file."""
+    filepath = os.path.join(DATA_DIR, filename)
+    if not os.path.exists(filepath):
+        return set()
+    
+    rsids = set()
+    open_func = gzip.open if filename.endswith(".gz") else open
+    mode = "rt" if filename.endswith(".gz") else "r"
+    
+    try:
+        with open_func(filepath, mode) as f:
+            for line in f:
+                rsid = line.strip()
+                if rsid:
+                    rsids.add(rsid)
+    except Exception as e:
+        st.error(f"Error loading filter {filename}: {e}")
+    return rsids
+
+def filter_variants(variants, selected_filters, max_variants):
+    """
+    Filter variants based on selected rsID lists.
+    Returns: (filtered_variants, total_matches, warning_msg)
+    """
+    if not selected_filters:
+        return variants[:max_variants], len(variants), None
+
+    # Load all selected filter sets
+    allowed_rsids = set()
+    for fname in selected_filters:
+        allowed_rsids.update(load_rsid_set(fname))
+
+    # Filter
+    filtered = []
+    for v in variants:
+        # If it has an rsid, check if it's in the allowed set
+        if v.get("rsid") and v["rsid"] in allowed_rsids:
+            filtered.append(v)
+    
+    total_matches = len(filtered)
+    
+    # Apply count limit
+    if total_matches > max_variants:
+        warning = (
+            f"Filter matched **{total_matches}** variants, which exceeds the limit of **{max_variants}**.\n"
+            f"Showing top {max_variants}."
+        )
+        return filtered[:max_variants], total_matches, warning
+    
+    return filtered, total_matches, None
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -597,6 +659,35 @@ def render_methodology_sidebar():
 
         st.divider()
 
+        # ── Filters ──
+        st.subheader("🔍 Filters")
+        
+        filter_options = {
+            "ACMG 81 Genes": "acmg81_rsids.txt",
+            "Pharmacogenomics": "pharma_rsids.txt",
+            "Carrier Screening": "carrier_rsids.txt",
+            "Health Traits": "health_traits_rsids.txt",
+            "All ClinVar Variants": "all_clinvar_rsids.txt.gz",
+        }
+        
+        selected_filters = []
+        for label, filename in filter_options.items():
+            if st.checkbox(label, value=(label == "ACMG 81 Genes")):
+                selected_filters.append(filename)
+
+        st.caption("Select categories to filter the huge 23andMe file.")
+
+        max_variants = st.slider(
+            "Max variants to process",
+            min_value=10,
+            max_value=1000,
+            value=200,
+            step=10,
+            help="Limit the number of variants sent to Ensembl VEP to avoid timeouts."
+        )
+
+        st.divider()
+
         # ── N8N toggle ──
         st.subheader("🔗 N8N Pipeline")
         n8n_enabled = st.toggle(
@@ -610,7 +701,8 @@ def render_methodology_sidebar():
                 "N8N is enabled but no webhook URL is configured. "
                 "Set `N8N_WEBHOOK_URL` in main.py or as an env variable."
             )
-        return n8n_enabled
+            
+        return n8n_enabled, selected_filters, max_variants
 
 
 def render_header():
@@ -742,7 +834,7 @@ def main():
         layout="wide",
     )
 
-    n8n_enabled = render_methodology_sidebar()
+    n8n_enabled, selected_filters, max_variants_limit = render_methodology_sidebar()
     render_header()
 
     # ── File uploader ──
@@ -787,6 +879,20 @@ def main():
             return
 
     st.success(f"Parsed **{len(variants)}** variant(s) from `{uploaded_file.name}`.")
+
+    # ── Apply Filters ──
+    filtered_variants, total_matches, warning_msg = filter_variants(variants, selected_filters, max_variants_limit)
+    
+    if warning_msg:
+        st.warning(warning_msg)
+    elif len(variants) > len(filtered_variants):
+        st.info(f"Filtered down to **{len(filtered_variants)}** relevant variants (from {len(variants)} total).")
+    
+    if not filtered_variants:
+        st.warning("No variants matched your selected filters.")
+        return
+
+    variants = filtered_variants
 
     # ── Separate coordinate vs rsID-only variants ──
     coordinate_variants = [v for v in variants if v["variant_type"] == "coordinate"]
