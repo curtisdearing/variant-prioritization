@@ -667,13 +667,13 @@ def render_methodology_sidebar():
 
             | Source | Weight |
             |--------|--------|
-            | ClinVar pathogenic | +1 000 |
-            | ClinVar likely path. | +500 |
-            | ClinVar VUS | +50 |
-            | High-impact (LoF) | +100 |
-            | Moderate-impact | +50 |
-            | Rare in gnomAD | +10 – +30 |
-            | Common in gnomAD | −20 |
+            | ClinVar pathogenic | +400 |
+            | ClinVar likely path. | +200 |
+            | ClinVar VUS | +20 |
+            | High-impact (LoF) | +40 |
+            | Moderate-impact | +20 |
+            | Rare in gnomAD | +2 |
+            | Common in gnomAD | −8 |
 
             ---
 
@@ -681,10 +681,10 @@ def render_methodology_sidebar():
 
             | Tier | Score | Meaning |
             |------|-------|---------|
-            | 🔴 Critical | ≥ 500 | ClinVar pathogenic |
-            | 🟠 High | ≥ 100 | Likely LoF / likely path. |
-            | 🟡 Medium | ≥ 30 | Missense + rare, or VUS |
-            | 🟢 Low | < 30 | Common / benign / silent |
+            | 🔴 Critical | ≥ 200 | ClinVar pathogenic |
+            | 🟠 High | ≥ 40 | Likely LoF / likely path. |
+            | 🟡 Medium | ≥ 12 | Missense + rare, or VUS |
+            | 🟢 Low | < 12 | Common / benign / silent |
             """
         )
 
